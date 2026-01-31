@@ -1,5 +1,6 @@
 import os
 import time
+import random
 import requests
 from openai import OpenAI
 from openai import APIConnectionError, APITimeoutError
@@ -7,6 +8,7 @@ from openai import APIConnectionError, APITimeoutError
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]  # e.g. "@SooSimpleIIT"
 
+# OpenAI client with bigger timeout; we handle retries ourselves
 client = OpenAI(
     api_key=os.environ["OPENAI_API_KEY"],
     timeout=90,
@@ -25,26 +27,63 @@ def retry_call(fn, tries=6):
             delay = min(delay * 2, 60)
     raise last_err
 
-def make_quote():
+def make_quote() -> str:
+    # rotate themes so quotes feel different daily
+    themes = [
+        "discipline", "consistency", "focus", "revision", "confidence",
+        "hard work", "smart work", "comeback", "exam day calm", "daily practice"
+    ]
+    theme = random.choice(themes)
+
     def _do():
         resp = client.responses.create(
             model="gpt-4.1-mini",
-            input="Write ONE original motivational quote for exam students. Max 16 words. No emojis. No author."
+            input=(
+                f"Write ONE original motivational quote for students preparing for exams. "
+                f"Theme: {theme}. "
+                f"Max 18 words. No emojis. No author name. No hashtags."
+            ),
         )
         return resp.output_text.strip()
-    return retry_call(_do)
 
-def send_telegram_message(text: str):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    r = requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": text}, timeout=30)
+    return retry_call(_do, tries=6)
+
+def download_random_nature_image() -> bytes:
+    """
+    Uses Unsplash Source (no API key needed).
+    Adds a cache-buster so we get a different image each run.
+    """
+    cache_buster = int(time.time())
+    url = f"https://source.unsplash.com/1920x1080/?nature,landscape,mountains,forest&sig={cache_buster}"
+    r = requests.get(url, timeout=60, allow_redirects=True)
+    r.raise_for_status()
+    return r.content
+
+def send_telegram_photo(image_bytes: bytes, caption: str):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+    files = {"photo": ("motivation.jpg", image_bytes)}
+    data = {"chat_id": TELEGRAM_CHAT_ID, "caption": caption[:1024]}  # Telegram caption limit
+    r = requests.post(url, data=data, files=files, timeout=60)
+
+    # If it fails, show Telegram's exact reason in GitHub logs
+    if r.status_code != 200:
+        print("Telegram status:", r.status_code)
+        print("Telegram response:", r.text)
+
     r.raise_for_status()
 
 if __name__ == "__main__":
+    # Make quote (fallback if OpenAI fails)
     try:
         quote = make_quote()
     except Exception as e:
         print("OpenAI failed, using fallback:", repr(e))
         quote = "Small daily effort beats rare intensity. Study today; thank yourself tomorrow."
 
-    send_telegram_message(quote)
-    print("Posted to Telegram.")
+    # Get a different HD nature image each run
+    img = download_random_nature_image()
+
+    caption = f"{quote}\n\n#motivation #study #jee #boards"
+    send_telegram_photo(img, caption)
+
+    print("Posted HD nature photo + new quote.")
