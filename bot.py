@@ -46,3 +46,59 @@ if __name__ == "__main__":
     image_bytes = make_image(quote)
     post_to_telegram(image_bytes, caption)
     print("Posted to Telegram.")
+
+
+import os
+import time
+import requests
+from openai import OpenAI
+from openai import APIConnectionError, APITimeoutError
+
+TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
+TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]  # e.g. "@SooSimpleIIT"
+
+# Longer timeout helps; OpenAI SDK supports a timeout parameter. :contentReference[oaicite:1]{index=1}
+client = OpenAI(
+    api_key=os.environ["OPENAI_API_KEY"],
+    timeout=90,        # increase from default
+    max_retries=0      # we'll do controlled retries ourselves
+)
+
+def retry_call(fn, tries=6):
+    delay = 2
+    last_err = None
+    for i in range(tries):
+        try:
+            return fn()
+        except (APIConnectionError, APITimeoutError) as e:
+            last_err = e
+            time.sleep(delay)
+            delay = min(delay * 2, 60)
+    raise last_err
+
+def make_quote():
+    def _do():
+        resp = client.responses.create(
+            model="gpt-4.1-mini",
+            input=(
+                "Write ONE original motivational quote for JEE/Boards students. "
+                "Max 16 words. No emojis. No author name."
+            ),
+        )
+        return resp.output_text.strip()
+    return retry_call(_do, tries=6)
+
+def send_telegram_message(text: str):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    r = requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": text}, timeout=30)
+    r.raise_for_status()
+
+if __name__ == "__main__":
+    try:
+        quote = make_quote()
+    except Exception:
+        # Fallback so GitHub Action doesn't fail if OpenAI connection fails
+        quote = "Small daily effort beats rare intensity. Study today; thank yourself tomorrow."
+
+    send_telegram_message(quote)
+    print("Posted to Telegram.")
