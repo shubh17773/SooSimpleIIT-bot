@@ -95,10 +95,13 @@ def send_telegram_photo(image_bytes: bytes, caption: str):
 
 if __name__ == "__main__":
     # Make quote (fallback if OpenAI fails)
-    try:
-        quote = make_quote()
-    except Exception as e:
+    import random
+
+try:
+    quote = make_quote()
+except Exception as e:
     print("OpenAI failed, using fallback:", repr(e))
+
     fallback_quotes = [
         "Win the morning: 45 minutes of deep study before the world wakes up.",
         "Discipline is choosing what you want most over what you want now.",
@@ -111,7 +114,7 @@ if __name__ == "__main__":
         "No zero days. Even 20 minutes counts.",
         "Calm mind, clear plan, ruthless execution.",
     ]
-    import random
+
     quote = random.choice(fallback_quotes)
 
 
