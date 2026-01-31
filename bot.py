@@ -50,14 +50,35 @@ def make_quote() -> str:
 
 def download_random_nature_image() -> bytes:
     """
-    Uses Unsplash Source (no API key needed).
-    Adds a cache-buster so we get a different image each run.
+    Try multiple HD image sources with retries.
+    This prevents job failure if one provider is down (503 etc.).
     """
     cache_buster = int(time.time())
-    url = f"https://source.unsplash.com/1920x1080/?nature,landscape,mountains,forest&sig={cache_buster}"
-    r = requests.get(url, timeout=60, allow_redirects=True)
-    r.raise_for_status()
-    return r.content
+    sources = [
+        # Unsplash Source (nice but sometimes 503)
+        f"https://source.unsplash.com/1920x1080/?nature,landscape,mountains,forest&sig={cache_buster}",
+
+        # Picsum (always up, random HD photo)
+        f"https://picsum.photos/1920/1080?random={cache_buster}",
+
+        # Another picsum endpoint
+        f"https://picsum.photos/seed/{cache_buster}/1920/1080",
+    ]
+
+    last_err = None
+    for url in sources:
+        for attempt in range(3):  # retry each source 3 times
+            try:
+                r = requests.get(url, timeout=60, allow_redirects=True)
+                r.raise_for_status()
+                return r.content
+            except Exception as e:
+                last_err = e
+                time.sleep(2 ** attempt)  # 1s,2s,4s
+                continue
+
+    raise last_err
+
 
 def send_telegram_photo(image_bytes: bytes, caption: str):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
