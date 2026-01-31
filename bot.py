@@ -46,7 +46,7 @@ def make_quote() -> str:
         )
         return resp.output_text.strip()
 
-    return retry_call(_do, tries=6)
+    return retry_call(_do, tries=10)
 
 def download_random_nature_image() -> bytes:
     """
@@ -98,8 +98,22 @@ if __name__ == "__main__":
     try:
         quote = make_quote()
     except Exception as e:
-        print("OpenAI failed, using fallback:", repr(e))
-        quote = "Small daily effort beats rare intensity. Study today; thank yourself tomorrow."
+    print("OpenAI failed, using fallback:", repr(e))
+    fallback_quotes = [
+        "Win the morning: 45 minutes of deep study before the world wakes up.",
+        "Discipline is choosing what you want most over what you want now.",
+        "Consistency beats intensity. One solid hour daily changes everything.",
+        "Don’t chase motivation—build a routine that works even without it.",
+        "Today’s revision is tomorrow’s confidence.",
+        "Small steps daily create massive results. Start now.",
+        "Focus on the next question, not the whole syllabus.",
+        "Your competition is your yesterday. Beat it by 1% today.",
+        "No zero days. Even 20 minutes counts.",
+        "Calm mind, clear plan, ruthless execution.",
+    ]
+    import random
+    quote = random.choice(fallback_quotes)
+
 
     # Get a different HD nature image each run
     img = download_random_nature_image()
