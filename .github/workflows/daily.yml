@@ -21,6 +21,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Network check
+        run: |
+          curl -I https://api.openai.com || true
+          curl -I https://api.telegram.org || true
+
+
       - name: Run bot
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
