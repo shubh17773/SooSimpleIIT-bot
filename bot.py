@@ -2,48 +2,55 @@ import os
 import time
 import random
 import requests
-from openai import OpenAI
-from openai import APIConnectionError, APITimeoutError
 
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
-client = OpenAI(
-    api_key=os.environ["OPENAI_API_KEY"],
-    timeout=120,
-    max_retries=0
-)
+def get_quote():
+    """
+    Fetch a random motivational quote from multiple public sources.
+    No OpenAI needed.
+    """
+    # 1) ZenQuotes
+    try:
+        r = requests.get("https://zenquotes.io/api/random", timeout=20)
+        r.raise_for_status()
+        data = r.json()
+        q = data[0]["q"]
+        a = data[0].get("a", "")
+        quote = f"{q} — {a}".strip(" —")
+        return quote[:200]
+    except Exception as e:
+        print("ZenQuotes failed:", repr(e))
 
-def retry_call(fn, tries=10):
-    delay = 2
-    last_err = None
-    for _ in range(tries):
-        try:
-            return fn()
-        except (APIConnectionError, APITimeoutError) as e:
-            last_err = e
-            time.sleep(delay)
-            delay = min(delay * 2, 60)
-    raise last_err
+    # 2) Quotable
+    try:
+        r = requests.get("https://api.quotable.io/random?tags=motivational|inspirational", timeout=20)
+        r.raise_for_status()
+        data = r.json()
+        q = data["content"]
+        a = data.get("author", "")
+        quote = f"{q} — {a}".strip(" —")
+        return quote[:200]
+    except Exception as e:
+        print("Quotable failed:", repr(e))
 
-def make_quote():
-    themes = ["discipline", "focus", "revision", "confidence", "consistency", "calmness"]
-    theme = random.choice(themes)
-
-    def _do():
-        resp = client.responses.create(
-            model="gpt-4.1-mini",
-            input=(
-                f"Write ONE original motivational quote for exam students. "
-                f"Theme: {theme}. Max 18 words. No emojis. No author."
-            ),
-        )
-        return resp.output_text.strip()
-
-    return retry_call(_do, tries=10)
+    # 3) Final fallback list (always works)
+    fallback_quotes = [
+        "Consistency beats intensity. One focused hour daily changes everything.",
+        "Today’s revision is tomorrow’s confidence.",
+        "Small steps daily create massive results. Start now.",
+        "Focus on the next question, not the whole syllabus.",
+        "No zero days. Even 20 minutes counts.",
+        "Calm mind, clear plan, ruthless execution.",
+        "Discipline is doing it even when motivation is missing.",
+        "Win the morning: study first, excuses later.",
+        "Your future score depends on today’s effort.",
+        "Practice today so exam day feels familiar."
+    ]
+    return random.choice(fallback_quotes)
 
 def download_random_nature_image():
-    # Multiple sources + retries so it never fails
     cache_buster = int(time.time())
     sources = [
         f"https://source.unsplash.com/1920x1080/?nature,landscape,mountains,forest&sig={cache_buster}",
@@ -74,45 +81,11 @@ def send_telegram_photo(image_bytes: bytes, caption: str):
     r.raise_for_status()
 
 if __name__ == "__main__":
-    fallback_quotes = [
-        "Consistency beats intensity. One focused hour daily changes everything.",
-        "Today’s revision is tomorrow’s confidence.",
-        "Discipline is doing it even when motivation is missing.",
-        "Small steps daily create massive results. Start now.",
-        "Focus on the next question, not the whole syllabus.",
-        "No zero days. Even 20 minutes counts.",
-        "Calm mind, clear plan, ruthless execution.",
-        "Win the morning: study first, excuses later.",
-        "Your future score depends on today’s effort.",
-        "Practice today so exam day feels familiar.",
-    ]
+    quote = get_quote()
+    print("Quote used:", quote)
 
-    try:
-        quote = make_quote()
-        print("OpenAI quote:", quote)
-    except Exception as e:
-        print("OpenAI error:", repr(e))
-        quote = random.choice(fallback_quotes)
-        print("Fallback quote:", quote)
-
-    try:
-        img = download_random_nature_image()
-    except Exception as e:
-        print("Image download error:", repr(e))
-        # If image download fails, still post text only
-        img = None
-
+    img = download_random_nature_image()
     caption = f"{quote}\n\n#motivation #study #jee #boards"
+    send_telegram_photo(img, caption)
 
-    if img:
-        send_telegram_photo(img, caption)
-        print("Posted photo + quote.")
-    else:
-        # fallback to text post
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        r = requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": caption}, timeout=30)
-        if r.status_code != 200:
-            print("Telegram status:", r.status_code)
-            print("Telegram response:", r.text)
-        r.raise_for_status()
-        print("Posted text only.")
+    print("Posted photo + quote.")
